@@ -1,0 +1,1164 @@
+---
+title: "Temperature/developmental daf-2 experiments 2025"
+author: "Sara Irish"
+date: "2025-02-19"
+output: html_document
+---
+# Setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+suppressPackageStartupMessages({
+  library(glmmTMB)
+  library(car)
+  library(popbio)
+  library(ggplot2)
+  library(ggbeeswarm)
+  library(shades)
+  library(RColorBrewer)
+  library(DHARMa)
+  library(Rmisc)
+  library(dabestr)
+  library(magrittr)
+  library(tidyr)
+  library(dplyr)
+  library(ggeffects)
+  library(lme4)
+  library(optimx)
+  library(nloptr)
+  library(dfoptim)
+  library(data.table)
+  library(pscl)
+  library(ggThemeAssist)
+  library(DHARMa)
+  library(emmeans)
+  library(ggpubr)
+  library(patchwork)
+  library(lubridate)
+  library(survival)
+  library(coxme) #for cox model
+  library(ggplot2)
+  library(purrr) #for forestplot
+  library(ggpubr) #for forestplot
+  library(survminer) #for forestplot
+  library(AICcmodavg)
+  library(permutes)
+  library(performance)
+  library(fields)
+  library(grid)
+  library(ggplotify)
+  library(cowplot)
+  library(eha)
+  library(multcomp)})
+
+
+
+
+# Print real numbers, not scientific notation.
+options(scipen = 999)
+
+hot_dev <- read.csv('Hot_dev_time.csv')
+cold_dev <- read.csv('Cold_dev_time.csv')
+hot_dev2 <- read.csv('Hot_dev_time2.csv')
+
+palette <- c('#1F77B4FF' ,'#FF7F0EFF','#2CA02CFF', '#D62728FF' )
+
+
+level_order <- c('D1', 'D2', 'D3', 'D4','D5','D6','D7','D8','D9','D10')
+
+```
+
+# Developmental timing at 15 or 25C with developmental daf-2 RNAi----------------------------------
+```{r}
+
+cold_dev$Treatment <- revalue(cold_dev$Treatment, c('ev' = 'ev', 'daf' = 'daf-2'))
+cold_dev$Treatment <- as.factor(cold_dev$Treatment)
+cold_dev$Treatment <- relevel(cold_dev$Treatment, ref = 'ev')
+
+hot_dev$Treatment <- revalue(hot_dev$Treatment, c('ev' = 'ev', 'daf' = 'daf-2'))
+hot_dev$Treatment <- as.factor(hot_dev$Treatment)
+hot_dev$Treatment <- relevel(hot_dev$Treatment, ref = 'ev')
+
+hot_dev2$Treatment <- revalue(hot_dev2$Treatment, c('ev' = 'ev', 'daf' = 'daf-2'))
+hot_dev2$Treatment <- as.factor(hot_dev2$Treatment)
+hot_dev2$Treatment <- relevel(hot_dev2$Treatment, ref = 'ev')
+
+
+hot_dev_all <- rbind(hot_dev, hot_dev2)
+
+meforest <- function(cox, ev){  #Eds version of forest plot
+  require(AICcmodavg)
+  require(ggplot2)
+  require(forcats)
+  store <- matrix(nrow = length(cox$coefficients) + 1, ncol = 4)
+  ref <- c(paste(ev), 0,NA, NA)
+  store[1,] <- ref
+  for (x in 1:length(cox$coefficients)){
+    y = x+1
+    mean<-cox$coefficients[x]
+    emean <- (mean)
+    CIL <- cox$coefficients[x] - (1.96*extractSE(cox)[x])
+    CUL <- cox$coefficients[x] + (1.96*extractSE(cox)[x])
+    eCIL <- (CIL)
+    eCUL <- (CUL)
+    store[y, 1:4] <- c(names(cox$coefficients[x]), emean, eCIL, eCUL)}
+  colnames(store) <- c("Treatment", "mean", "CIL","CUL")
+  store <- as.data.frame(store)
+  store$mean <- as.numeric(as.character(store$mean))
+  store$CIL <- as.numeric(as.character(store$CIL))
+  store$CUL <- as.numeric(as.character(store$CUL))
+  forest<-ggplot(store, aes(x = mean, xmax = CUL, xmin = CIL, y = Treatment, colour = Treatment)) +
+    geom_point(size=4, shape = 19, colour = c('darkorange2','deepskyblue4')) +
+    geom_errorbarh(height=0.25, size=0.9,  colour = c('darkorange2','deepskyblue4')) +
+    theme_minimal() +
+    geom_vline(xintercept=0, linetype="dotted", size=0.8) +
+    xlab("Hazard Ratio")+
+    ylab("")+
+    theme(
+      axis.text = element_text(size = 16),
+      axis.title = element_text(size = 18)
+    )+
+    scale_y_discrete(limits = (levels(store$Treatment)), labels = c('Treatmentdaf-2'='daf-2', 'ev' = 'ev'))+
+    expand_limits(x = c(-0.25,1.25))
+  return(forest)
+}
+
+
+
+mat_time_cold <- ggplot(cold_dev, aes(x = Age, fill = Treatment))+
+  geom_histogram(binwidth = 1, alpha = 0.7 , position = 'identity')+
+  scale_fill_manual(values = c('darkorange2','deepskyblue4'))+
+  labs(y = 'Number matured', x = 'Age (hours)')+
+  theme_classic()+
+  theme(axis.text = element_text(size = 16),
+        axis.title = element_text(size = 18),
+        legend.text = element_text(size = 16),
+        legend.title = element_blank(),
+        legend.position = c(0.8, 0.9))
+
+mat_time_cold
+
+
+cold_surv <-survfit(Surv(Age,Repro)~Treatment,data=cold_dev)
+summary(cold_surv)
+
+
+cox <- coxme(Surv(Age, Event) ~ Treatment  +(1|Repro.plate.ID), data = cold_dev)
+
+cold_forest <-meforest(cox, "ev")
+cold_forest
+
+mat_time_cold/cold_forest+ plot_layout(
+  heights = c(3, 2)
+)
+
+
+####  25 C Development with daf-2 KD ####
+
+
+mat_time_hot <- ggplot(hot_dev, aes(x = Age, fill = Treatment))+
+  geom_histogram(binwidth = 1, alpha = 0.7 , position = 'identity')+
+  scale_fill_manual(values = c('deepskyblue4','darkorange2'))+
+  labs(y = 'Number matured', x = 'Age (hours)')+
+  theme_classic()+
+  theme(axis.text = element_text(size = 16),
+        axis.title = element_text(size = 18),
+        legend.text = element_text(size = 16),
+        legend.title = element_blank(),
+        legend.position = c(0.8, 0.9))
+
+mat_time_hot
+
+hot_surv <-survfit(Surv(Age,Event)~Treatment,data=hot_dev)
+
+cox <- coxme(Surv(Age, Event) ~ Treatment  +(1|Repro.plate.ID), data = hot_dev)
+summary(cox)
+cox.zph(cox)
+
+hot_forest <-meforest(cox, "ev")
+hot_forest
+
+mat_time_hot/hot_forest
+
+
+hot_dev2 <- na.omit(hot_dev2)
+
+mat_time_hot2 <- ggplot(hot_dev2, aes(x = Age, fill = Treatment))+
+  geom_histogram(binwidth = 1, alpha = 0.7 , position = 'identity')+
+  scale_fill_manual(values = c('darkorange2','deepskyblue4'))+
+  labs(y = 'Number matured', x = 'Age (hours)')+
+  theme_classic()+
+  theme(axis.text = element_text(size = 16),
+        axis.title = element_text(size = 18),
+        legend.text = element_text(size = 16),
+        legend.title = element_blank(),
+        legend.position = c(0.8, 0.9))
+
+mat_time_hot2
+
+hot_surv <-survfit(Surv(Age,Repro)~Treatment,data=hot_dev2)
+
+cox <- coxme(Surv(Age, Event) ~ Treatment  +(1|Repro.plate.ID), data = hot_dev2)
+summary(cox)
+cox.zph(cox)
+
+hot_forest2 <-meforest(cox, "ev")
+hot_forest2
+
+mat_time_hot2/hot_forest2
+
+
+
+hot_dev_all <- na.omit(hot_dev_all)
+
+mat_time_hot_all <- ggplot(hot_dev_all, aes(x = Age, fill = Treatment))+
+  geom_histogram(binwidth = 1, alpha = 0.7 , position = 'identity')+
+  scale_fill_manual(values = c('darkorange2','deepskyblue4'))+
+  labs(y = 'Number matured', x = 'Age (hours)')+
+  theme_classic()+
+  theme(axis.text = element_text(size = 16),
+        axis.title = element_text(size = 18),
+        legend.text = element_text(size = 16),
+        legend.title = element_blank(),
+        legend.position = c(0.8, 0.9))
+
+mat_time_hot_all
+
+hot_surv <-survfit(Surv(Age,Repro)~Treatment,data=hot_dev_all)
+
+cox <- coxme(Surv(Age, Event) ~ Treatment  +(1|Rep_plate), data = hot_dev_all)
+summary(cox)
+cox.zph(cox)
+
+hot_forest_all <-meforest(cox, "ev")
+hot_forest_all
+
+mat_time_hot_all/hot_forest_all + plot_layout(
+  heights = c(3, 2)
+)
+
+
+```
+
+
+# Hot Reproduction - 25C + daf-2 RNAi ----------------------
+```{r}
+
+hot_rep <- read.csv('Hot_repro.csv')
+
+hot_long <- hot_rep %>% 
+  pivot_longer(
+    cols = c(`D1`, `D2`, `D3`, `D4`, `D5`), 
+    names_to = "Day",
+    values_to = "value")
+
+
+hot_long <- hot_long %>%
+  select(c('ID', 'Dev_ID','Treatment','Day','value'))
+
+hot_long <- na.omit(hot_long)
+
+#just treatments daf and ev
+hot_p <-ggplot(data=hot_long, aes(x=factor(Day), y=value, group=Treatment, color=Treatment))+
+  geom_jitter(alpha = 0.2, position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.5))+
+  stat_summary(fun.data="mean_cl_boot", geom="errorbar", size = 1.2, width=0.0, position = position_dodge(0.5)) +
+  stat_summary(fun.data="mean_cl_boot", geom="point", size = 3, position = position_dodge(0.5)) +
+  stat_summary(fun.data="mean_cl_boot", geom="line",  size=1.2, position = position_dodge(0.5)) +
+  theme_classic()+
+  labs(y="Offspring number", x="")+
+  labs(col="")+
+  theme(axis.title.y = element_text(size=20))+
+  theme(axis.title.x = element_text(size=20))+
+  theme(axis.text= element_text(size = 18))+
+  theme(legend.text = element_text(size = 18))+
+  scale_color_manual(values=c('deepskyblue4','darkorange2'))+
+  theme(legend.key.width = unit(0.5,"cm"))+
+  coord_cartesian(ylim = c(0,225))+
+  theme(legend.position = c(0.1, 0.9))
+
+hot_p
+
+#totrep
+
+totalrep<-na.omit(as.data.frame.table(tapply(hot_long$value,list(hot_long$Treatment, hot_long$ID),sum)))
+
+#rename columns
+names(totalrep)<-c("Treatment", "Replicate", "Totrep")
+
+totalrep$Treatment <- revalue(totalrep$Treatment, c('ev' = 'ev', 'daf' = 'daf-2'))
+
+
+totrep_dab <-
+  totalrep %>%
+  load(x =Treatment, y=Totrep,
+       idx = c('ev','daf-2'))
+
+totrep_p <- mean_diff(totrep_dab)
+
+tot_rep_plot <- dabest_plot(totrep_p, FALSE, raw_marker_spread = 1, swarm_label = 'LRS',custom_palette = 'd3', swarm_x_text = 12, swarm_y_text = 12, contrast_y_text = 12, contrast_x_text = 12, raw_marker_alpha = 0.3, tufte_size = 1 )
+
+tot_rep_plot
+
+### bLOCK 2
+
+hot_rep2 <- read.csv('Hot_repro2_2.csv')
+
+hot_long2 <- hot_rep2 %>% 
+  pivot_longer(
+    cols = c(`D1`, `D2`, `D3`, `D4`, `D5`), 
+    names_to = "Day",
+    values_to = "value")
+
+
+hot_long2 <- hot_long2 %>%
+  select(c('ID', 'Dev_ID','Treatment','Day','value'))
+
+hot_long2 <- na.omit(hot_long2)
+
+#just treatments daf and ev
+hot_p <-ggplot(data=hot_long2, aes(x=factor(Day), y=value, group=Treatment, color=Treatment))+
+  geom_jitter(alpha = 0.2, position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.5))+
+  stat_summary(fun.data="mean_cl_boot", geom="errorbar", size = 1.2, width=0.0, position = position_dodge(0.5)) +
+  stat_summary(fun.data="mean_cl_boot", geom="point", size = 3, position = position_dodge(0.5)) +
+  stat_summary(fun.data="mean_cl_boot", geom="line",  size=1.2, position = position_dodge(0.5)) +
+  theme_classic()+
+  labs(y="Offspring number", x="")+
+  labs(col="")+
+  theme(axis.title.y = element_text(size=20))+
+  theme(axis.title.x = element_text(size=20))+
+  theme(axis.text= element_text(size = 18))+
+  theme(legend.text = element_text(size = 18))+
+  scale_color_manual(values=c('deepskyblue4','darkorange2'))+
+  theme(legend.key.width = unit(0.5,"cm"))+
+  coord_cartesian(ylim = c(0,225))+
+  theme(legend.position = c(0.1, 0.9))
+
+hot_p
+
+
+#totrep
+
+totalrep<-na.omit(as.data.frame.table(tapply(hot_long2$value,list(hot_long2$Treatment, hot_long2$ID),sum)))
+
+#rename columns
+names(totalrep)<-c("Treatment", "Replicate", "Totrep")
+
+totalrep$Treatment <- revalue(totalrep$Treatment, c('ev' = 'ev', 'daf' = 'daf-2'))
+
+
+
+totrep_dab <-
+  totalrep %>%
+  load(x =Treatment, y=Totrep,
+       idx = c('ev','daf-2'))
+
+totrep_p <- mean_diff(totrep_dab)
+
+tot_rep_plot <- dabest_plot(totrep_p, FALSE, raw_marker_spread = 1, swarm_label = 'LRS',custom_palette = 'd3', swarm_x_text = 12, swarm_y_text = 12, contrast_y_text = 14, contrast_x_text = 12, raw_marker_alpha = 0.3, tufte_size = 1 )
+
+tot_rep_plot
+
+
+
+### Logistic regression for matricide by treatment
+mat_glm2 <- glm(Matricide ~ Treatment, data = hot_rep2, family = binomial(link = 'logit'))
+summary(mat_glm2) #EV more likely to matricide...
+
+mat_glm <- glm(Matricide ~ Treatment, data = hot_rep, family = binomial(link = 'logit'))
+summary(mat_glm) #EV more likely to matricide...
+
+### Combine blocks
+hot_rep_all <- rbind(hot_rep, hot_rep2)
+
+hot_rep_all <- tibble::rowid_to_column(hot_rep_all, "ID_all")
+
+
+hot_long_all <- hot_rep_all %>% 
+  pivot_longer(
+    cols = c(`D1`, `D2`, `D3`, `D4`, `D5`), 
+    names_to = "Day",
+    values_to = "value")
+
+hot_long_all <- hot_long_all %>%
+  select(c('ID_all', 'Dev_ID','Treatment','Day','value'))
+
+hot_long_all <- na.omit(hot_long_all)
+
+#just treatments daf and ev
+hot_p_all <-ggplot(data=hot_long_all, aes(x=factor(Day), y=value, group=Treatment, color=Treatment))+
+  geom_jitter(alpha = 0.2, position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.5))+
+  stat_summary(fun.data="mean_cl_boot", geom="errorbar", size = 1.2, width=0.0, position = position_dodge(0.5)) +
+  stat_summary(fun.data="mean_cl_boot", geom="point", size = 3, position = position_dodge(0.5)) +
+  stat_summary(fun.data="mean_cl_boot", geom="line",  size=1.2, position = position_dodge(0.5)) +
+  theme_classic()+
+  labs(y="Offspring number", x="")+
+  labs(col="")+
+  theme(axis.title.y = element_text(size=20))+
+  theme(axis.title.x = element_text(size=20))+
+  theme(axis.text= element_text(size = 18))+
+  theme(legend.text = element_text(size = 18))+
+  scale_color_manual(values=c('deepskyblue4','darkorange2'))+
+  theme(legend.key.width = unit(0.5,"cm"))+
+  coord_cartesian(ylim = c(0,225))+
+  theme(legend.position = c(0.1, 0.9))
+
+hot_p_all
+
+
+#totrep
+
+totalrep<-na.omit(as.data.frame.table(tapply(hot_long_all$value,list(hot_long_all$Treatment, hot_long_all$ID_all),sum)))
+
+#rename columns
+names(totalrep)<-c("Treatment", "Replicate", "Totrep")
+
+totalrep$Treatment <- revalue(totalrep$Treatment, c('daf' = 'daf-2','ev' = 'ev'))
+
+
+
+totrep_dab <-
+  totalrep %>%
+  load(x =Treatment, y=Totrep,
+       idx = c('daf-2','ev'))
+
+totrep_p <- mean_diff(totrep_dab)
+
+tot_rep_plot <- dabest_plot(totrep_p, FALSE, raw_marker_spread = 1, swarm_label = '\nLRS',custom_palette = 'd3', swarm_x_text = 14, swarm_y_text = 14, contrast_y_text = 16, contrast_x_text = 14, raw_marker_alpha = 0.3, tufte_size = 1 )
+
+tot_rep_plot
+
+hot_p_all + tot_rep_plot + plot_layout(widths = c(4, 2))
+
+
+hist(totalrep$Totrep)
+hot_totrep_lm <- lm(Totrep ~ Treatment, data = totalrep)
+summary(hot_totrep_lm)
+
+
+summary(hot_totrep_lm)
+mat_glm_all <- glm(Matricide ~ Treatment, data = hot_rep_all, family = binomial(link = 'logit'))
+summary(mat_glm_all) #EV more likely to matricide...
+
+hot_rep_all <- na.omit(hot_rep_all)
+hot_rep_all  %>%
+  group_by(Treatment) %>%
+  summarise(n_of_observations = n(), prop = sum(Matricide == 1)/n())
+
+```
+
+
+# Cold Reproduction - 15C + daf-2 RNAi
+```{r}
+
+cold_rep <- read.csv('Cold_repro.csv')
+cold_rep_A <- read.csv('Cold_repro_anna.csv')
+
+cold_rep <- cold_rep %>%
+  select(-c(ID, Dev_Plate, Time))
+
+
+cold_rep_all <- rbind(cold_rep, cold_rep_A)
+
+cold_long <- cold_rep %>% 
+  pivot_longer(
+    cols = c(`D1`, `D2`, `D3`, `D4`, `D5`,`D6`,`D7`,`D8`,`D9`,`D10`), 
+    names_to = "Day",
+    values_to = "value")
+
+cold_long <- cold_long %>%
+  select(c('ID', 'Dev_Plate', 'Plate_ID','Treatment','Day','value'))
+
+cold_long <- na.omit(cold_long)
+
+cold_p <-ggplot(data=cold_long, aes(x=factor(Day, levels = level_order), y=value, group=Treatment, color=Treatment))+
+  geom_jitter(alpha = 0.2, position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.5))+
+  stat_summary(fun.data="mean_cl_boot", geom="errorbar", size = 1.2, width=0.0, position = position_dodge(0.5)) +
+  stat_summary(fun.data="mean_cl_boot", geom="point", size = 3, position = position_dodge(0.5)) +
+  stat_summary(fun.data="mean_cl_boot", geom="line",  size=1.2, position = position_dodge(0.5)) +
+  theme_classic()+
+  labs(y="Offspring number", x="")+
+  labs(col="")+
+  theme(axis.title.y = element_text(size=20))+
+  theme(axis.title.x = element_text(size=20))+
+  theme(axis.text= element_text(size = 18))+
+  theme(legend.text = element_text(size = 18))+
+  scale_color_manual(values=c('deepskyblue4','darkorange2'))+
+  theme(legend.key.width = unit(0.5,"cm"))+
+  coord_cartesian(ylim = c(0,225))+
+  theme(legend.position = c(0.1, 0.9))
+
+cold_p
+
+#totrep
+
+totalrep<-na.omit(as.data.frame.table(tapply(cold_long$value,list(cold_long$Treatment, cold_long$ID),sum)))
+
+#rename columns
+names(totalrep)<-c("Treatment", "Replicate", "Totrep")
+
+totalrep$Treatment <- revalue(totalrep$Treatment, c('ev' = 'ev', 'daf' = 'daf-2'))
+
+
+
+totrep_dab <-
+  totalrep %>%
+  load(x =Treatment, y=Totrep,
+       idx = c('ev','daf-2'))
+
+totrep_p <- mean_diff(totrep_dab)
+
+tot_rep_plot <- dabest_plot(totrep_p, FALSE, raw_marker_spread = 1, swarm_label = 'LRS',custom_palette = 'd3', swarm_x_text = 12, swarm_y_text = 12, contrast_y_text = 12, contrast_x_text = 12, raw_marker_alpha = 0.3, tufte_size = 1 )
+
+tot_rep_plot
+
+cold_long$Day <- factor(cold_long$Day, levels = c('D1','D2', 'D3', 'D4','D5','D6','D7','D8','D9','D10'))
+
+
+cold_long <- cold_long %>%
+  select(ID, Treatment, Day, value)
+
+#spread data back out#spread valuedata back out
+cold_wide <- spread(cold_long, Day, value)
+
+cold_wide <- na.omit(cold_wide)
+
+#calculate Lambda for each individual
+L <- matrix(nrow = nrow(cold_wide), ncol = 3)
+
+for (i in 1:nrow(cold_wide)){
+  Les <- matrix(0, ncol = 12, nrow = 12) #ncol and nrow should = no. days repro +2
+  diag(Les[-1,]) <- rep(1, 11) # add the 1s for survival probability diagonally
+  Fert <- c(0,0, as.numeric(as.vector(cold_wide[i,][3:12]))) #the columns in data that has the reproductive counts
+  Fert[is.na(Fert)] <- 0 #makes all NAs into 0s
+  Les[1,] <- c(Fert)
+  class(Les) <- "leslie.matrix"
+  Lambda <- popbio::eigen.analysis(Les)$lambda1
+  L[i, 1:3] <- c(paste0(cold_wide$ID[i]), paste0(cold_wide$Treatment[i]), Lambda)
+  
+}
+
+#rename columns
+colnames(L)<-c("ID", "Treatment","Lambda")
+
+#make L a data frame
+Data<-as.data.frame(L)
+
+#make sure it's numeric
+Data$Lambda<-as.numeric(as.character(Data$Lambda))
+
+str(Data)
+
+lam_dab <-
+  Data %>%
+  load(x =Treatment, y=Lambda,
+       idx = c('ev','daf'))
+
+lam_dab_p <- mean_diff(lam_dab)
+
+lam_plot <- dabest_plot(lam_dab_p, FALSE, raw_marker_spread = 1, swarm_label = 'LRS',custom_palette = 'd3', swarm_x_text = 12, swarm_y_text = 12, contrast_y_text = 12, contrast_x_text = 12, raw_marker_alpha = 0.3, tufte_size = 1 )
+
+lam_plot
+
+###Include Anna's data
+
+cold_rep_all <- tibble::rowid_to_column(cold_rep_all, "ID")
+
+
+cold_long <- cold_rep_all %>% 
+  pivot_longer(
+    cols = c(`D1`, `D2`, `D3`, `D4`, `D5`,`D6`,`D7`,`D8`,`D9`,`D10`), 
+    names_to = "Day",
+    values_to = "value")
+
+
+
+
+cold_long <- cold_long %>%
+  select(c('ID', 'Plate','Treatment','Day','value'))
+
+cold_long <- na.omit(cold_long)
+
+cold_p <-ggplot(data=cold_long, aes(x=factor(Day, levels = level_order), y=value, group=Treatment, color=Treatment))+
+  geom_jitter(alpha = 0.2, position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.5))+
+  stat_summary(fun.data="mean_cl_boot", geom="errorbar", size = 1.2, width=0.0, position = position_dodge(0.5)) +
+  stat_summary(fun.data="mean_cl_boot", geom="point", size = 3, position = position_dodge(0.5)) +
+  stat_summary(fun.data="mean_cl_boot", geom="line",  size=1.2, position = position_dodge(0.5)) +
+  theme_classic()+
+  labs(y="Offspring number", x="")+
+  labs(col="")+
+  theme(axis.title.y = element_text(size=20))+
+  theme(axis.title.x = element_text(size=20))+
+  theme(axis.text= element_text(size = 18))+
+  theme(legend.text = element_text(size = 18))+
+  scale_color_manual(values=c('deepskyblue4','darkorange2'))+
+  theme(legend.key.width = unit(0.5,"cm"))+
+  coord_cartesian(ylim = c(0,225))+
+  theme(legend.position = c(0.1, 0.9))
+
+cold_p
+
+#totrep
+
+totalrep<-na.omit(as.data.frame.table(tapply(cold_long$value,list(cold_long$Treatment, cold_long$ID),sum)))
+
+#rename columns
+names(totalrep)<-c("Treatment", "Replicate", "Totrep")
+
+totalrep$Treatment <- revalue(totalrep$Treatment, c('ev' = 'ev', 'daf' = 'daf-2'))
+
+
+
+totrep_dab <-
+  totalrep %>%
+  load(x =Treatment, y=Totrep,
+       idx = c('daf-2','ev'))
+
+totrep_p <- mean_diff(totrep_dab)
+
+tot_rep_plot <- dabest_plot(totrep_p, FALSE, raw_marker_spread = 1, swarm_label = '\nLRS',custom_palette = 'd3', swarm_x_text = 14, swarm_y_text = 14, contrast_y_text = 16, contrast_x_text = 14, raw_marker_alpha = 0.3, tufte_size = 1 )
+
+tot_rep_plot
+
+cold_long$Day <- factor(cold_long$Day, levels = c('D1','D2', 'D3', 'D4','D5','D6','D7','D8','D9','D10'))
+
+
+cold_long <- cold_long %>%
+  select(ID, Treatment, Day, value)
+
+#spread data back out#spread valuedata back out
+cold_wide <- spread(cold_long, Day, value)
+
+cold_wide <- na.omit(cold_wide)
+
+#calculate Lambda for each individual
+L <- matrix(nrow = nrow(cold_wide), ncol = 3)
+
+for (i in 1:nrow(cold_wide)){
+  Les <- matrix(0, ncol = 12, nrow = 12) #ncol and nrow should = no. days repro +2
+  diag(Les[-1,]) <- rep(1, 11) # add the 1s for survival probability diagonally
+  Fert <- c(0,0, as.numeric(as.vector(cold_wide[i,][3:12]))) #the columns in data that has the reproductive counts
+  Fert[is.na(Fert)] <- 0 #makes all NAs into 0s
+  Les[1,] <- c(Fert)
+  class(Les) <- "leslie.matrix"
+  Lambda <- popbio::eigen.analysis(Les)$lambda1
+  L[i, 1:3] <- c(paste0(cold_wide$ID[i]), paste0(cold_wide$Treatment[i]), Lambda)
+  
+}
+
+#rename columns
+colnames(L)<-c("ID", "Treatment","Lambda")
+
+#make L a data frame
+Data<-as.data.frame(L)
+
+#make sure it's numeric
+Data$Lambda<-as.numeric(as.character(Data$Lambda))
+
+str(Data)
+
+lam_dab <-
+  Data %>%
+  load(x =Treatment, y=Lambda,
+       idx = c('ev','daf'))
+
+lam_dab_p <- mean_diff(lam_dab)
+
+lam_plot <- dabest_plot(lam_dab_p, FALSE, raw_marker_spread = 1, swarm_label = 'LRS',custom_palette = 'd3', swarm_x_text = 12, swarm_y_text = 12, contrast_y_text = 12, contrast_x_text = 12, raw_marker_alpha = 0.3, tufte_size = 1 )
+
+lam_plot
+
+```
+
+# Thermocycling COLD FIRST Reproduction - developmental daf-2 RNAi
+```{r}
+
+thermo_c <- read.csv('Thermo_C_rep.csv')
+
+thermo_c_long <- thermo_c %>% 
+  pivot_longer(
+    cols = c(`D2`, `D3`, `D4`, `D5`,`D6`, `D7`,`D8`,`D9`,`D10`), 
+    names_to = "Day",
+    values_to = "value")
+
+thermo_long <- thermo_c_long %>%
+  select(c('ID','Strain', 'Treatment','Day','value'))
+
+thermo_long <- na.omit(thermo_long)
+
+thermo_long <- thermo_long %>%
+  unite(Str_tr, c('Strain', 'Treatment'), remove = F)
+
+thermo_long$Str_tr <- factor(thermo_long$Str_tr, levels = c("N2_ev", "N2_daf", "SKN-1_ev", "SKN-1_daf"))
+
+palette <- c('#1F77B4FF' ,'#FF7F0EFF','#2CA02CFF', '#D62728FF' )
+
+
+
+thermo_p <-ggplot(data=thermo_long, aes(x=factor(Day, levels = level_order), y=value, group=Str_tr, color=Str_tr))+
+  geom_jitter(alpha = 0.2, position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.5))+
+  stat_summary(fun.data="mean_cl_boot", geom="errorbar", size = 1.2, width=0.0, position = position_dodge(0.5)) +
+  stat_summary(fun.data="mean_cl_boot", geom="point", size = 3, position = position_dodge(0.5)) +
+  stat_summary(fun.data="mean_cl_boot", geom="line",  size=1.2, position = position_dodge(0.5)) +
+  theme_classic()+
+  labs(y="Offspring number", x="")+
+  labs(col="")+
+  labs(title = '24 h thermocycle - 15C first')+   
+  theme(axis.title.y = element_text(size=20))+
+  theme(axis.title.x = element_text(size=20))+
+  theme(axis.text= element_text(size = 18))+
+  theme(legend.text = element_text(size = 18))+
+  theme(plot.title = element_text(size = 20, face = 'bold'))+
+  scale_color_manual(values=palette)+
+  theme(legend.key.width = unit(0.5,"cm"))+
+  coord_cartesian(ylim = c(0,175))+
+  theme(legend.position = c(0.8, 0.9))
+
+thermo_p
+
+
+#totrep
+
+totalrep<-na.omit(as.data.frame.table(tapply(thermo_long$value,list(thermo_long$Str_tr, thermo_long$ID),sum)))
+
+#rename columns
+names(totalrep)<-c("Tr_str", "Replicate", "Totrep")
+
+#totalrep$Treatment <- revalue(totalrep$Treatment, c('ev' = 'ev', 'daf' = 'daf-2'))
+
+totalrep$Tr_str <- factor(totalrep$Tr_str, levels = c("N2_ev", "N2_daf", "SKN-1_ev", "SKN-1_daf"))
+
+str(totalrep)
+totrep_dab <-
+  totalrep %>%
+  load(x =Tr_str, y=Totrep,
+       idx = c('N2_ev','N2_daf', 'SKN-1_ev','SKN-1_daf'))
+
+totrep_p <- mean_diff(totrep_dab)
+
+tot_rep_plot <- dabest_plot(totrep_p, FALSE, raw_marker_spread = 1, swarm_label = 'LRS',custom_palette = 'd3', swarm_x_text = 12, swarm_y_text = 12, contrast_y_text = 12, contrast_x_text = 12, raw_marker_alpha = 0.3, tufte_size = 1 )
+
+tot_rep_plot
+
+## Calculate lambda
+
+thermo_long <- thermo_long %>%
+  select(ID, Str_tr, Day,value)
+
+thermo_long$Day <- factor(thermo_long$Day, levels = c('D2', 'D3', 'D4','D5','D6','D7','D8','D9','D10'))
+
+
+#spread data back out
+thermo_wide <- spread(thermo_long, Day, value)
+
+thermo_wide <- na.omit(thermo_wide)
+
+#calculate Lambda for each individual
+L <- matrix(nrow = nrow(thermo_wide), ncol = 3)
+
+for (i in 1:nrow(thermo_wide)){
+  Les <- matrix(0, ncol = 11, nrow = 11) #ncol and nrow should = no. days repro +2
+  diag(Les[-1,]) <- rep(1, 10) # add the 1s for survival probability diagonally
+  Fert <- c(0,0, as.numeric(as.vector(thermo_wide[i,][3:11]))) #the columns in data that has the reproductive counts
+  Fert[is.na(Fert)] <- 0 #makes all NAs into 0s
+  Les[1,] <- c(Fert)
+  class(Les) <- "leslie.matrix"
+  Lambda <- popbio::eigen.analysis(Les)$lambda1
+  L[i, 1:3] <- c(paste0(thermo_wide$ID[i]), paste0(thermo_wide$Str_tr[i]), Lambda)
+  
+}
+
+#rename columns
+colnames(L)<-c("ID", "Treatment","Lambda")
+
+#make L a data frame
+Data<-as.data.frame(L)
+
+#make sure it's numeric
+Data$Lambda<-as.numeric(as.character(Data$Lambda))
+
+str(Data)
+
+lam_dab <-
+  Data %>%
+  load(x =Treatment, y=Lambda,
+       idx = c('N2_ev','N2_daf', 'SKN-1_ev','SKN-1_daf'))
+
+lam_dab_p <- mean_diff(lam_dab)
+
+lam_plot <- dabest_plot(lam_dab_p, FALSE, raw_marker_spread = 1, swarm_label = 'Lambda',custom_palette = 'd3', swarm_x_text = 12, swarm_y_text = 12, contrast_y_text = 12, contrast_x_text = 12, raw_marker_alpha = 0.3, tufte_size = 1 )
+
+lam_plot
+
+
+
+thermo_p /(tot_rep_plot + lam_plot)
+
+ggsave('thermo_C_rep.png', height = 8, width = 10)
+
+```
+
+
+# Thermocycling HOT FIRST Reproduction - developmental daf-2 RNAi
+```{r}
+
+thermo_h <- read.csv('Thermo_H_rep.csv')
+
+thermo_h_long <- thermo_h %>% 
+  pivot_longer(
+    cols = c(`D2`, `D3`, `D4`, `D5`,`D6`, `D7`,`D8`,`D9`,`D10`), 
+    names_to = "Day",
+    values_to = "value")
+
+thermo_long <- thermo_h_long %>%
+  select(c('ID','Strain', 'Treatment','Day','value'))
+
+thermo_long <- na.omit(thermo_long)
+
+thermo_long <- thermo_long %>%
+  unite(Str_tr, c('Strain', 'Treatment'), remove = F)
+
+thermo_long$Str_tr <- factor(thermo_long$Str_tr, levels = c("N2_ev", "N2_daf", "SKN-1_ev", "SKN-1_daf"))
+
+
+
+thermo_long$Day <- factor(thermo_long$Day, levels = c('D2', 'D3', 'D4','D5','D6','D7','D8','D9','D10'))
+
+thermo_p <-ggplot(data=thermo_long, aes(x=factor(Day, levels = level_order), y=value, group=Str_tr, color=Str_tr))+
+  geom_jitter(alpha = 0.2, position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.5))+
+  stat_summary(fun.data="mean_cl_boot", geom="errorbar", size = 1.2, width=0.0, position = position_dodge(0.5)) +
+  stat_summary(fun.data="mean_cl_boot", geom="point", size = 3, position = position_dodge(0.5)) +
+  stat_summary(fun.data="mean_cl_boot", geom="line",  size=1.2, position = position_dodge(0.5)) +
+  theme_classic()+
+  labs(y="Offspring number", x="")+
+  labs(col="")+
+  labs(title = '24 h thermocycle - 25C first')+
+  theme(plot.title = element_text(size = 20, face = 'bold'))+
+  theme(axis.title.y = element_text(size=20))+
+  theme(axis.title.x = element_text(size=20))+
+  theme(axis.text= element_text(size = 18))+
+  theme(legend.text = element_text(size = 18))+
+  scale_color_manual(values=palette)+
+  theme(legend.key.width = unit(0.5,"cm"))+
+  coord_cartesian(ylim = c(0,225))+
+  theme(legend.position = c(0.8, 0.9))
+
+thermo_p
+
+
+#totrep
+
+totalrep<-na.omit(as.data.frame.table(tapply(thermo_long$value,list(thermo_long$Str_tr, thermo_long$ID),sum)))
+
+#rename columns
+names(totalrep)<-c("Tr_str", "Replicate", "Totrep")
+
+#totalrep$Treatment <- revalue(totalrep$Treatment, c('ev' = 'ev', 'daf' = 'daf-2'))
+
+totalrep$Tr_str <- factor(totalrep$Tr_str, levels = c("N2_ev", "N2_daf", "SKN-1_ev", "SKN-1_daf"))
+
+str(totalrep)
+totrep_dab <-
+  totalrep %>%
+  load(x =Tr_str, y=Totrep,
+       idx = c('N2_ev','N2_daf', 'SKN-1_ev','SKN-1_daf'))
+
+totrep_p <- mean_diff(totrep_dab)
+
+tot_rep_plot <- dabest_plot(totrep_p, FALSE, raw_marker_spread = 1, swarm_label = 'LRS',custom_palette = 'd3', swarm_x_text = 12, swarm_y_text = 12, contrast_y_text = 12, contrast_x_text = 12, raw_marker_alpha = 0.3, tufte_size = 1 )
+
+tot_rep_plot
+
+
+
+#spread data back out
+thermo_wide <- spread(thermo_long, Day, value)
+
+thermo_wide <- na.omit(thermo_wide)
+
+#calculate Lambda for each individual
+L <- matrix(nrow = nrow(thermo_wide), ncol = 3)
+
+for (i in 1:nrow(thermo_wide)){
+  Les <- matrix(0, ncol = 11, nrow = 11) #ncol and nrow should = no. days repro +2
+  diag(Les[-1,]) <- rep(1, 10) # add the 1s for survival probability diagonally
+  Fert <- c(0,0, as.numeric(as.vector(thermo_wide[i,][3:11]))) #the columns in data that has the reproductive counts
+  Fert[is.na(Fert)] <- 0 #makes all NAs into 0s
+  Les[1,] <- c(Fert)
+  class(Les) <- "leslie.matrix"
+  Lambda <- popbio::eigen.analysis(Les)$lambda1
+  L[i, 1:3] <- c(paste0(thermo_wide$ID[i]), paste0(thermo_wide$Str_tr[i]), Lambda)
+  
+}
+
+#rename columns
+colnames(L)<-c("ID", "Treatment","Lambda")
+
+#make L a data frame
+Data<-as.data.frame(L)
+
+#make sure it's numeric
+Data$Lambda<-as.numeric(as.character(Data$Lambda))
+
+str(Data)
+
+lam_dab <-
+  Data %>%
+  load(x =Treatment, y=Lambda,
+       idx = c('N2_ev','N2_daf', 'SKN-1_ev','SKN-1_daf'))
+
+lam_dab_p <- mean_diff(lam_dab)
+
+lam_plot <- dabest_plot(lam_dab_p, FALSE, raw_marker_spread = 1, swarm_label = 'Lambda',custom_palette = 'd3', swarm_x_text = 12, swarm_y_text = 12, contrast_y_text = 12, contrast_x_text = 12, raw_marker_alpha = 0.3, tufte_size = 1 )
+
+lam_plot
+
+
+
+thermo_p /(tot_rep_plot + lam_plot)
+
+ggsave('thermo_H_rep.png', height = 8, width = 10)
+```
+
+# Thermocycle Cold FIRST LIFESPAN
+```{r}
+
+#Function for creating forest plot
+meforest <- function(cox, N2_ev){  #Eds version of forest plot
+  require(AICcmodavg)
+  require(ggplot2)
+  require(forcats)
+  store <- matrix(nrow = length(cox$coefficients) + 1, ncol = 4)
+  ref <- c(paste(N2_ev), 0,NA, NA)
+  store[1,] <- ref
+  for (x in 1:length(cox$coefficients)){
+    y = x+1
+    mean<-cox$coefficients[x]
+    emean <- (mean)
+    CIL <- cox$coefficients[x] - (1.96*extractSE(cox)[x])
+    CUL <- cox$coefficients[x] + (1.96*extractSE(cox)[x])
+    eCIL <- (CIL)
+    eCUL <- (CUL)
+    store[y, 1:4] <- c(names(cox$coefficients[x]), emean, eCIL, eCUL)}
+  colnames(store) <- c("Str_tr", "mean", "CIL","CUL")
+  store <- as.data.frame(store)
+  store$mean <- as.numeric(as.character(store$mean))
+  store$CIL <- as.numeric(as.character(store$CIL))
+  store$CUL <- as.numeric(as.character(store$CUL))
+  forest<-ggplot(store, aes(x = mean, xmax = CUL, xmin = CIL, y = Str_tr, colour = Str_tr)) +
+    geom_point(size=4, shape = 19, colour = c('#1F77B4FF', '#2CA02CFF', '#D62728FF','#FF7F0EFF')) +
+    geom_errorbarh(height=0.25, size=0.9,  colour = c('#1F77B4FF', '#2CA02CFF', '#D62728FF','#FF7F0EFF')) +
+    theme_minimal() +
+    geom_vline(xintercept=0, linetype="dotted", size=0.8) +
+    xlab("Hazard Ratio")+
+    ylab("")+
+    theme(
+      axis.text = element_text(size = 18),
+      axis.title = element_text(size = 18)
+    )+
+    scale_y_discrete(limits = (levels(store$Str_tr)), labels = c('Str_trSKN-1_ev' = 'SKN-1 ev', 'Str_trSKN-1_daf' = 'SKN-1 daf-2', 'Str_trN2_daf' = 'N2 daf-2', 'N2_ev' = 'N2 ev'))+
+    expand_limits(x = c(-1.5,0.5))
+  return(forest)
+}
+
+#, labels = c('Treatmentdaf_L4' = 'adult daf-2','Treatmentdaf_L1toL4' = 'dev daf-2', 'Treatmentdaf_L1' = 'lifelong daf-2')
+
+Th_C_LS <- read.csv('Thermo_C_LS.csv')
+
+Th_C_LS <- Th_C_LS %>%
+  unite(Str_tr, c('Strain', 'Treatment.ID'), remove = F)
+
+Th_C_LS$Str_tr <- as.factor(Th_C_LS$Str_tr)
+
+Th_C_LS$Str_tr <- relevel(Th_C_LS$Str_tr, ref = 'N2_ev')
+
+Th_C_LS <- Th_C_LS %>%
+  filter(Th_C_LS$Cause != 'L' & Th_C_LS$Cause !='W' & Th_C_LS$Cause != 'E')
+
+Th_C_LS$Str_tr <- factor(Th_C_LS$Str_tr, levels = c("N2_ev", "N2_daf", "SKN-1_ev", "SKN-1_daf"))
+
+Th_C_LS$Matricide <- as.numeric(Th_C_LS$Cause == 'M')
+
+C_mat_mod <- glmer(Matricide ~ Str_tr + (1|Plate.ID), data = Th_C_LS, family = 'binomial')
+summary(C_mat_mod)
+
+surv<-survfit(Surv(Age,Event)~Str_tr,data=Th_C_LS)
+
+
+THC_LS_plot <-ggsurvplot(surv, ylab="Survival probability\n", data = Th_C_LS, size= 0.8, font.ylab= 18, font.xlab= 18, legend = c(0.3, 0.4), legend.title = "", title = "Thermocycle 15C first \n Matricides uncensored", censor = FALSE, xlab = "\nDay", xlim=c(0,40), break.time.by = 5, palette = palette, position= position_dodge(0.9), legend.labs=c("N2_ev", "N2_daf", "SKN-1_ev", "SKN-1_daf"),font.tickslab = c(14),  font.legend = c(16), font.title = c(16))
+THC_LS_plot
+
+Th_C_LSNM <- Th_C_LS %>%
+  filter(Th_C_LS$Cause != 'M')
+
+surv<-survfit(Surv(Age,Event)~Str_tr,data=Th_C_LSNM)
+
+LS_plot_matcen_THC <-ggsurvplot(surv, ylab="Survival probability\n", data = Th_C_LSNM, size= 0.8, font.ylab= 18, font.xlab= 18, legend = c(0.3, 0.4), legend.title = "", palette = palette, title = "Thermocycle 15C first \n Matricides censored", censor = FALSE, xlab = "\nDay", xlim=c(0,40), break.time.by = 5, position= position_dodge(0.9), legend.labs=c("N2_ev", "N2_daf", "SKN-1_ev", "SKN-1_daf"), font.tickslab = c(14), font.legend = c(16), font.title = c(16))
+LS_plot_matcen_THC
+
+THC_cox <- coxme(Surv(Age, Event) ~ Str_tr + (1|Plate.ID), data = Th_C_LS)
+THC_NM_cox <- coxme(Surv(Age, Event) ~ Str_tr + (1|Plate.ID), data = Th_C_LSNM)
+
+
+THC_forest <- meforest(THC_cox, 'N2_ev')
+THC_forest
+
+THC_NM_forest <- meforest(THC_NM_cox, 'N2_ev')
+THC_NM_forest
+
+
+
+THC_all_plot <- ggarrange(THC_LS_plot$plot, LS_plot_matcen_THC$plot, THC_forest, THC_NM_forest, common.legend = T, nrow = 2, ncol = 2,heights = c(2, 1), labels = c('A', 'B'))
+THC_all_plot
+ggsave('ThermoCOLDfirstLS_plot.tif', height = 8, width = 12)
+
+```
+
+
+# Thermocycling HOT FIRST lifespan
+```{r}
+
+Th_H_LS <- read.csv('Thermo_H_LS.csv')
+
+Th_H_LS <- Th_H_LS %>%
+  unite(Str_tr, c('Strain', 'Treatment.ID'), remove = F)
+
+Th_H_LS$Str_tr <- as.factor(Th_H_LS$Str_tr)
+
+Th_H_LS$Str_tr <- relevel(Th_H_LS$Str_tr, ref = 'N2_ev')
+
+Th_H_LS <- Th_H_LS %>%
+  filter(Th_H_LS$Cause != 'L' & Th_H_LS$Cause !='W' & Th_H_LS$Cause != 'E')
+
+Th_H_LS$Str_tr <- factor(Th_H_LS$Str_tr, levels = c("N2_ev", "N2_daf", "SKN-1_ev", "SKN-1_daf"))
+
+class(Th_H_LS$Age)
+
+Th_H_LS$Age <- as.numeric(Th_H_LS$Age)
+
+surv<-survfit(Surv(Age,Event)~Str_tr,data=Th_H_LS)
+
+Th_H_LS$Matricide <- as.numeric(Th_H_LS$Cause == 'M')
+
+mat_mod <- glmer(Matricide ~ Str_tr + (1|Plate.ID), data = Th_H_LS, family = 'binomial')
+summary(mat_mod)
+
+THH_LS_plot <-ggsurvplot(surv, ylab="Survival probability\n", data = Th_H_LS, size= 0.8, font.ylab= 18, font.xlab= 18, legend = c(0.8, 0.9), legend.title = "", title = "Thermocycle 25C first \n Matricides uncensored", censor = FALSE, xlab = "\nDay", xlim=c(0,40), break.time.by = 5, palette = palette, position= position_dodge(0.9), legend.labs=c("N2_ev", "N2_daf", "SKN-1_ev", "SKN-1_daf"),font.tickslab = c(14),  font.legend = c(16), font.title = c(16))
+THH_LS_plot
+
+Th_H_LSNM <- Th_H_LS %>%
+  filter(Th_H_LS$Cause != 'M')
+
+surv<-survfit(Surv(Age,Event)~Str_tr,data=Th_H_LSNM)
+
+LS_plot_matcen_THH <-ggsurvplot(surv, ylab="Survival probability\n", data = Th_H_LSNM, size= 0.8, font.ylab= 18, font.xlab= 18, legend = c(0.2, 0.2), legend.title = "", palette = palette, title = "Thermocycle 25C first \n Matricides censored", censor = FALSE, xlab = "\nDay", xlim=c(0,40), break.time.by = 5, position= position_dodge(0.9), legend.labs=c("N2_ev", "N2_daf", "SKN-1_ev", "SKN-1_daf"), font.tickslab = c(14), font.legend = c(16), font.title = c(16))
+LS_plot_matcen_THH
+
+
+THH_cox <- coxme(Surv(Age, Event) ~ Str_tr + (1|Plate.ID), data = Th_H_LS)
+THH_NM_cox <- coxme(Surv(Age, Event) ~ Str_tr + (1|Plate.ID), data = Th_H_LSNM)
+
+
+THH_forest <- meforest(THH_cox, 'N2_ev')
+THH_forest
+
+THH_NM_forest <- meforest(THH_NM_cox, 'N2_ev')
+THH_NM_forest
+
+
+THH_all_plot <- ggarrange(THH_LS_plot$plot, LS_plot_matcen_THH$plot, THH_forest, THH_NM_forest, common.legend = T, nrow = 2, ncol = 2,heights = c(2, 1), labels = c('A', 'B'))
+THH_all_plot
+ggsave('ThermoHOTfirstLS_plot.tif', height = 8, width = 12)
+
+```
+
+# Hot LIFESPAN - 25C + developmental daf-2 RNAi
+```{r}
+
+meforest <- function(cox, ev){  #Eds version of forest plot
+  require(AICcmodavg)
+  require(ggplot2)
+  require(forcats)
+  store <- matrix(nrow = length(cox$coefficients) + 1, ncol = 4)
+  ref <- c(paste(ev), 0,NA, NA)
+  store[1,] <- ref
+  for (x in 1:length(cox$coefficients)){
+    y = x+1
+    mean<-cox$coefficients[x]
+    emean <- (mean)
+    CIL <- cox$coefficients[x] - (1.96*extractSE(cox)[x])
+    CUL <- cox$coefficients[x] + (1.96*extractSE(cox)[x])
+    eCIL <- (CIL)
+    eCUL <- (CUL)
+    store[y, 1:4] <- c(names(cox$coefficients[x]), emean, eCIL, eCUL)}
+  colnames(store) <- c("Treatment", "mean", "CIL","CUL")
+  store <- as.data.frame(store)
+  store$mean <- as.numeric(as.character(store$mean))
+  store$CIL <- as.numeric(as.character(store$CIL))
+  store$CUL <- as.numeric(as.character(store$CUL))
+  forest<-ggplot(store, aes(x = mean, xmax = CUL, xmin = CIL, y = Treatment, colour = Treatment)) +
+    geom_point(size=4, shape = 19, colour = c('darkorange2','deepskyblue4')) +
+    geom_errorbarh(height=0.25, size=0.9,  colour = c('darkorange2','deepskyblue4')) +
+    theme_minimal() +
+    geom_vline(xintercept=0, linetype="dotted", size=0.8) +
+    xlab("Hazard Ratio")+
+    ylab("")+
+    theme(
+      axis.text = element_text(size = 16),
+      axis.title = element_text(size = 18)
+    )+
+    scale_y_discrete(limits = (levels(store$Treatment)), labels = c('Treatment.IDdaf-2'='daf-2', 'ev' = 'ev'))+
+    expand_limits(x = c(-0.25,1.25))
+  return(forest)
+}
+
+hot_LS <- read.csv('Hot_LS.csv')
+hot_LS <- na.omit(hot_LS)
+
+hot_LS$Treatment.ID <- revalue(hot_LS$Treatment.ID, c('ev' = 'ev', 'daf' = 'daf-2'))
+hot_LS$Treatment.ID <- as.factor(hot_LS$Treatment.ID)
+hot_LS$Treatment.ID <- relevel(hot_LS$Treatment.ID, ref = 'ev')
+levels(hot_LS$Treatment.ID)
+hot_LS$Plate.ID <- as.factor(hot_LS$Plate.ID)
+surv<-survfit(Surv(Age,Event)~Treatment.ID,data=hot_LS)
+summary(surv)
+
+
+hot_LS_plot <-ggsurvplot(surv, ylab="Survival probability\n", data = hot_LS, size= 0.8, font.ylab= 18, font.xlab= 18, palette=c('darkorange2','deepskyblue4'), legend = c(0.8, 0.8), legend.title = "", legend.labs = c('ev','daf-2'), title = "", censor = FALSE, xlab = "\nDay", xlim=c(0,35), break.time.by = 5, position= position_dodge(0.9), font.tickslab = c(14), font.legend = c(16))
+
+hot_LS_plot
+
+
+
+cox <- coxme(Surv(Age, Event) ~ Treatment.ID + (1|Plate.ID), data = hot_LS)
+summary(cox)
+
+
+hotLS_forest <-meforest(cox, "ev")
+hotLS_forest
+
+
+
+hot_LS_NM <- hot_LS %>%
+  filter(Cause != 'M')
+
+surv<-survfit(Surv(Age,Event)~Treatment.ID,data=hot_LS_NM)
+
+
+hot_LS_NM_plot <-ggsurvplot(surv, ylab="Survival probability\n", data = hot_LS_NM, size= 0.8, font.ylab= 18, font.xlab= 18, palette=c('darkorange2','deepskyblue4'), legend = c(0.8, 0.8), legend.title = "", legend.labs = c('ev','daf-2'), title = "", censor = FALSE, xlab = "\nDay", xlim=c(0,35), break.time.by = 5, position= position_dodge(0.9), font.tickslab = c(14), font.legend = c(16))
+
+hot_LS_NM_plot
+
+
+cox <- coxme(Surv(Age, Event) ~ Treatment.ID + (1|Plate.ID), data = hot_LS_NM)
+
+hot_LS_NM_forest <- meforest(cox, 'ev')
+
+
+hotLS_all_plot <- ggarrange(hot_LS_plot$plot, hot_LS_NM_plot$plot, hotLS_forest, hot_LS_NM_forest, common.legend = T, nrow = 2, ncol = 2,heights = c(2, 1), labels = c('A', 'B'))
+
+hotLS_all_plot
+```
+
+
+
+
