@@ -49,10 +49,12 @@ suppressPackageStartupMessages({
   library(ggplotify)
   library(cowplot)
   library(eha)
-  library(multcomp)})
+  library(multcomp)
+  library(usethis)})
 
 
-
+#use_git()
+#use_github()
 
 # Print real numbers, not scientific notation.
 options(scipen = 999)
@@ -680,21 +682,22 @@ thermo_c_long <- thermo_c %>%
     names_to = "Day",
     values_to = "value")
 
-thermo_long <- thermo_c_long %>%
-  select(c('ID','Strain', 'Treatment','Day','value'))
+thermo_c_long <- thermo_c_long %>%
+  dplyr::select(c('ID','Strain', 'Treatment','Day','value'))
 
-thermo_long <- na.omit(thermo_long)
 
-thermo_long <- thermo_long %>%
+thermo_c_long <- na.omit(thermo_c_long)
+
+thermo_c_long <- thermo_c_long %>%
   unite(Str_tr, c('Strain', 'Treatment'), remove = F)
 
-thermo_long$Str_tr <- factor(thermo_long$Str_tr, levels = c("N2_ev", "N2_daf", "SKN-1_ev", "SKN-1_daf"))
+thermo_c_long$Str_tr <- factor(thermo_c_long$Str_tr, levels = c("N2_ev", "N2_daf", "SKN-1_ev", "SKN-1_daf"))
 
 palette <- c('#1F77B4FF' ,'#FF7F0EFF','#2CA02CFF', '#D62728FF' )
 
 
 
-thermo_p <-ggplot(data=thermo_long, aes(x=factor(Day, levels = level_order), y=value, group=Str_tr, color=Str_tr))+
+thermo_p <-ggplot(data=thermo_c_long, aes(x=factor(Day, levels = level_order), y=value, group=Str_tr, color=Str_tr))+
   geom_jitter(alpha = 0.2, position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.5))+
   stat_summary(fun.data="mean_cl_boot", geom="errorbar", size = 1.2, width=0.0, position = position_dodge(0.5)) +
   stat_summary(fun.data="mean_cl_boot", geom="point", size = 3, position = position_dodge(0.5)) +
@@ -718,7 +721,7 @@ thermo_p
 
 #totrep
 
-totalrep<-na.omit(as.data.frame.table(tapply(thermo_long$value,list(thermo_long$Str_tr, thermo_long$ID),sum)))
+totalrep<-na.omit(as.data.frame.table(tapply(thermo_c_long$value,list(thermo_c_long$Str_tr, thermo_c_long$ID),sum)))
 
 #rename columns
 names(totalrep)<-c("Tr_str", "Replicate", "Totrep")
@@ -741,10 +744,10 @@ tot_rep_plot
 
 ## Calculate lambda
 
-thermo_long <- thermo_long %>%
+thermo_c_long <- thermo_c_long %>%
   select(ID, Str_tr, Day,value)
 
-thermo_long$Day <- factor(thermo_long$Day, levels = c('D2', 'D3', 'D4','D5','D6','D7','D8','D9','D10'))
+thermo_c_long$Day <- factor(thermo_c_long$Day, levels = c('D2', 'D3', 'D4','D5','D6','D7','D8','D9','D10'))
 
 
 #spread data back out
@@ -795,6 +798,36 @@ thermo_p /(tot_rep_plot + lam_plot)
 
 ggsave('thermo_C_rep.png', height = 8, width = 10)
 
+
+
+
+thermo_C_N2 <- thermo_c_long %>%
+  filter(Strain == 'N2')
+
+
+levels(as.factor(thermo_C_N2$Strain))
+
+thermo_N2_p <-ggplot(data=thermo_C_N2, aes(x=factor(Day, levels = level_order), y=value, group=Treatment, color=Treatment))+
+  geom_jitter(alpha = 0.2, position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.5))+
+  stat_summary(fun.data="mean_cl_boot", geom="errorbar", size = 1.2, width=0.0, position = position_dodge(0.5)) +
+  stat_summary(fun.data="mean_cl_boot", geom="point", size = 3, position = position_dodge(0.5)) +
+  stat_summary(fun.data="mean_cl_boot", geom="line",  size=1.2, position = position_dodge(0.5)) +
+  theme_classic()+
+  labs(y="Offspring number", x="")+
+  labs(col="")+
+  labs(title = '24 h thermocycle - 15C first')+   
+  theme(axis.title.y = element_text(size=20))+
+  theme(axis.title.x = element_text(size=20))+
+  theme(axis.text= element_text(size = 18))+
+  theme(legend.text = element_text(size = 18))+
+  theme(plot.title = element_text(size = 20, face = 'bold'))+
+  scale_color_manual(values=c('#1F77B4FF' ,'#FF7F0EFF'))+
+  theme(legend.key.width = unit(0.5,"cm"))+
+  coord_cartesian(ylim = c(0,175))+
+  theme(legend.position = c(0.8, 0.9))
+
+thermo_N2_p
+
 ```
 
 
@@ -810,7 +843,7 @@ thermo_h_long <- thermo_h %>%
     values_to = "value")
 
 thermo_long <- thermo_h_long %>%
-  select(c('ID','Strain', 'Treatment','Day','value'))
+  dplyr::select(c('ID','Strain', 'Treatment','Day','value'))
 
 thermo_long <- na.omit(thermo_long)
 
@@ -917,6 +950,36 @@ lam_plot
 thermo_p /(tot_rep_plot + lam_plot)
 
 ggsave('thermo_H_rep.png', height = 8, width = 10)
+
+
+
+
+thermo_H_N2 <- thermo_long %>%
+  filter(Strain == 'N2')
+
+levels(as.factor(thermo_H_N2$Strain))
+
+thermo_H_N2_p <-ggplot(data=thermo_H_N2, aes(x=factor(Day, levels = level_order), y=value, group=Treatment, color=Treatment))+
+  geom_jitter(alpha = 0.2, position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.5))+
+  stat_summary(fun.data="mean_cl_boot", geom="errorbar", size = 1.2, width=0.0, position = position_dodge(0.5)) +
+  stat_summary(fun.data="mean_cl_boot", geom="point", size = 3, position = position_dodge(0.5)) +
+  stat_summary(fun.data="mean_cl_boot", geom="line",  size=1.2, position = position_dodge(0.5)) +
+  theme_classic()+
+  labs(y="Offspring number", x="")+
+  labs(col="")+
+  labs(title = '24 h thermocycle - 15C first')+   
+  theme(axis.title.y = element_text(size=20))+
+  theme(axis.title.x = element_text(size=20))+
+  theme(axis.text= element_text(size = 18))+
+  theme(legend.text = element_text(size = 18))+
+  theme(plot.title = element_text(size = 20, face = 'bold'))+
+  scale_color_manual(values=c('#1F77B4FF' ,'#FF7F0EFF'))+
+  theme(legend.key.width = unit(0.5,"cm"))+
+  coord_cartesian(ylim = c(0,175))+
+  theme(legend.position = c(0.8, 0.9))
+
+thermo_H_N2_p
+
 ```
 
 # Thermocycle Cold FIRST LIFESPAN
